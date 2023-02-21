@@ -1,0 +1,13 @@
+[package]
+name = "zkp-rust-storage"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+failure = "0.1.8"
+merk = {git="https://github.com/nomic-io/merk.git"}
+thiserror = "1.0.38"
+hex = "0.4.3"
+#blake2-rfc = {git="https://github.com/cesarb/blake2-rfc.git",rev="d4c14f2eada002153b4a43927694c59abe82d2d2"}
