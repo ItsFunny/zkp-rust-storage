@@ -2,9 +2,12 @@ use std::cell::Cell;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::marker::PhantomData;
+use std::ops::IndexMut;
 use std::sync::Arc;
 use merk::{Batch, BatchEntry, Op};
-use crate::instance::{DB, ProveRequest, ProveResponse, TreeDB, VerifyRequest, VerifyResponse};
+use derive_builder::Builder;
+use crate::instance::{DB, MerkleTreeDB, ProveRequest, ProveResponse, TreeDB, VerifyRequest, VerifyResponse};
+
 
 pub trait TreeMiddleware: TreeDB {
     type Inner: TreeMiddleware;
@@ -17,12 +20,6 @@ pub trait TreeMiddleware: TreeDB {
 pub enum DBType {
     Merkle
 }
-
-pub struct BuildOption {
-    db_type: Option<DBType>,
-    db_path: Option<String>,
-}
-
 
 pub enum Operation {
     Set(Vec<u8>, Vec<u8>),
@@ -299,5 +296,8 @@ mod test {
         let verify_resp = mid.verify(v_req).expect("fail to verify");
         assert_eq!(verify_resp.valid, true)
     }
+
+    #[test]
+    pub fn test_builder() {}
 }
 

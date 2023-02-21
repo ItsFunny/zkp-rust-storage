@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::path::Path;
 pub use failure::Error;
 
 extern crate merk;
@@ -75,6 +76,10 @@ pub struct MerkleTreeDB {
 impl MerkleTreeDB {
     pub fn new(m: Merk) -> Self {
         Self { m }
+    }
+    pub fn new_with_path<P: AsRef<Path>>(p: P) -> Self {
+        let merk = Merk::open(p).expect("fail to create ");
+        Self { m: merk }
     }
 }
 
