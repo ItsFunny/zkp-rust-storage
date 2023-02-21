@@ -1,5 +1,6 @@
 use std::cell::Cell;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::marker::PhantomData;
 use std::sync::Arc;
 use merk::{Batch, BatchEntry, Op};
@@ -8,7 +9,7 @@ use crate::instance::{DB, ProveRequest, ProveResponse, TreeDB, VerifyRequest, Ve
 pub trait TreeMiddleware: TreeDB {
     type Inner: TreeMiddleware;
     fn inner(&self) -> &Self::Inner;
-    fn clean(&self) -> crate::instance::Result<()> {
+    fn clean(&mut self) -> crate::instance::Result<()> {
         Ok(())
     }
 }
@@ -47,11 +48,14 @@ impl Default for Transaction {
     }
 }
 
+type Map = BTreeMap<Vec<u8>, Option<Vec<u8>>>;
+
 pub struct CacheMiddleware<M>
     where
         M: TreeMiddleware,
 {
-    c: Cell<Option<cacheInner>>,
+    // c: Cell<Option<cacheInner>>,
+    map: Option<Map>,
     inner: M,
     version: u64,
 }
@@ -90,9 +94,8 @@ impl<M> CacheMiddleware<M>
 {
     pub fn new(mid: M) -> CacheMiddleware<M> {
         Self {
-            c: Cell::new(Some(cacheInner { transactions: Default::default() })),
+            map: Some(Default::default()),
             inner: mid,
-            // TODO,load version
             version: 0,
         }
     }
@@ -103,12 +106,9 @@ impl<M> DB for CacheMiddleware<M>
         M: TreeMiddleware,
 {
     fn get(&self, k: Vec<u8>) -> crate::instance::Result<Option<Vec<u8>>> {
-        let inner = self.c.take();
-        let ret = inner.unwrap().find(k.clone());
-        match ret {
-            Some(v) => {
-                return Ok(Some(v));
-            }
+        match self.map.as_ref().unwrap().get(k.as_slice()) {
+            Some(Some(value)) => Ok(Some(value.clone())),
+            Some(None) => Ok(None),
             None => {
                 self.inner.get(k.clone()).map(|v| {
                     if let Some(value) = v {
@@ -122,24 +122,13 @@ impl<M> DB for CacheMiddleware<M>
     }
 
     fn set(&mut self, k: Vec<u8>, v: Vec<u8>) -> crate::instance::Result<()> {
-        let mut inner = self.c.take().unwrap();
-        inner.transactions.0.push(TransactionNode::new(self.version, Operation::Set(k, v)));
-        // inner.transactions.0.sort_by(|a, b| {
-        //     if a.version < b.version {
-        //         Ordering::Less
-        //     } else {
-        //         Ordering::Greater
-        //     }
-        // });
-        self.version = self.version + 1;
-        self.c.set(Some(inner));
+        self.map.as_mut().unwrap().insert(k, Some(v));
         Ok(())
     }
 
+
     fn delete(&mut self, k: Vec<u8>) -> crate::instance::Result<()> {
-        let mut inner = self.c.take().unwrap();
-        inner.transactions.0.push(TransactionNode::new(self.version, Operation::Delete(k)));
-        self.version = self.version + 1;
+        self.map.as_mut().unwrap().insert(k, None);
         Ok(())
     }
 }
@@ -155,21 +144,17 @@ impl<M> TreeDB for CacheMiddleware<M>
         self.inner.verify(req)
     }
 
-    fn commit(&mut self) -> crate::instance::Result<()> {
-        let inner = self.c.take().unwrap();
-        let ts = inner.transactions.0;
-        // TODO, 这不是batch插入
-        for op in ts {
-            match op.op {
-                Operation::Set(k, v) => {
-                    self.inner.set(k, v)?;
-                }
-                Operation::Delete(k) => {
-                    self.inner.delete(k)?;
-                }
+    fn commit(&mut self, mut operations: Vec<Operation>) -> crate::instance::Result<()> {
+        let map = self.map.take().unwrap();
+        self.map = Some(Map::new());
+
+        for (k, v) in map {
+            match v.clone() {
+                Some(value) => operations.push(Operation::Set(k, value)),
+                None => operations.push(Operation::Delete(k)),
             }
         }
-        Ok(())
+        self.inner.commit(operations)
     }
 
     fn root_hash(&self) -> [u8; 32] {
@@ -188,8 +173,8 @@ impl<M> TreeMiddleware for CacheMiddleware<M>
         &self.inner
     }
 
-    fn clean(&self) -> crate::instance::Result<()> {
-        self.c.set(Some(Default::default()));
+    fn clean(&mut self) -> crate::instance::Result<()> {
+        self.map = Some(Map::new());
         Ok(())
     }
 }
@@ -223,8 +208,8 @@ impl<D> TreeDB for DBMiddleware<D>
         self.db.verify(req)
     }
 
-    fn commit(&mut self) -> crate::instance::Result<()> {
-        self.db.commit()
+    fn commit(&mut self, mut operations: Vec<Operation>) -> crate::instance::Result<()> {
+        self.db.commit(operations)
     }
 
     fn root_hash(&self) -> [u8; 32] {
@@ -243,6 +228,7 @@ impl<D> DB for DBMiddleware<D>
     fn set(&mut self, k: Vec<u8>, v: Vec<u8>) -> crate::instance::Result<()> {
         self.db.set(k, v)
     }
+
 
     fn delete(&mut self, k: Vec<u8>) -> crate::instance::Result<()> {
         self.db.delete(k)
@@ -288,7 +274,7 @@ mod test {
         cache.set(vec![4, 5, 6], vec![1, 1, 1]).expect("fail to set ");
         cache.set(vec![1, 2, 3], vec![4, 5, 6]).expect("fail to set");
 
-        cache.commit().expect("fail to commit");
+        cache.commit(vec![]).expect("fail to commit");
     }
 
     fn new_cache_merkle() -> impl TreeMiddleware {

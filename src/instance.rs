@@ -7,6 +7,7 @@ use merk::*;
 use merk::proofs::Query;
 use merk::proofs::query::Map;
 use crate::error::ErrorEnums;
+use crate::middleware::Operation;
 
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -16,13 +17,14 @@ pub struct Order {}
 pub trait DB {
     fn get(&self, k: Vec<u8>) -> Result<Option<Vec<u8>>>;
     fn set(&mut self, k: Vec<u8>, v: Vec<u8>) -> Result<()>;
+    // fn batch_operation(&mut self, ops: Vec<Operation>) -> Result<()>;
     fn delete(&mut self, k: Vec<u8>) -> Result<()>;
 }
 
 pub trait TreeDB: DB {
     fn prove(&self, req: ProveRequest) -> Result<ProveResponse>;
     fn verify(&self, req: VerifyRequest) -> Result<VerifyResponse>;
-    fn commit(&mut self) -> Result<()>;
+    fn commit(&mut self, operations: Vec<Operation>) -> Result<()>;
     fn root_hash(&self) -> [u8; 32];
 }
 
@@ -89,12 +91,26 @@ impl DB for MerkleTreeDB {
         })
     }
 
+
     fn delete(&mut self, k: Vec<u8>) -> Result<()> {
         self.m.apply(&vec![(k, Op::Delete)], &[]).map_err(|e| {
             ErrorEnums::Unknown.into()
         })
     }
 }
+
+/// Collects an iterator of key/value entries into a `Vec`.
+fn to_batch(ops: Vec<Operation>) -> Vec<BatchEntry> {
+    let mut batch = Vec::new();
+    for val in ops {
+        match val {
+            Operation::Set(k, v) => batch.push((k, Op::Put(v))),
+            Operation::Delete(k) => batch.push((k, Op::Delete)),
+        }
+    }
+    batch
+}
+
 
 impl TreeDB for MerkleTreeDB {
     fn prove(&self, req: ProveRequest) -> Result<ProveResponse> {
@@ -126,12 +142,21 @@ impl TreeDB for MerkleTreeDB {
         Ok(ret)
     }
 
-    fn commit(&mut self) -> Result<()> {
-        Ok(())
+    fn commit(&mut self, mut operations: Vec<Operation>) -> Result<()> {
+        self.batch_operation(operations)
     }
 
     fn root_hash(&self) -> [u8; 32] {
         self.m.root_hash() as [u8; 32]
+    }
+}
+
+impl MerkleTreeDB {
+    fn batch_operation(&mut self, ops: Vec<Operation>) -> Result<()> {
+        let batches = to_batch(ops);
+        self.m.apply(&batches, &[]).map_err(|e| {
+            ErrorEnums::Unknown.into()
+        })
     }
 }
 
