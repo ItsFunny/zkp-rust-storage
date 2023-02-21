@@ -158,7 +158,7 @@ impl<M> TreeDB for CacheMiddleware<M>
     fn commit(&mut self) -> crate::instance::Result<()> {
         let inner = self.c.take().unwrap();
         let ts = inner.transactions.0;
-
+        // TODO, 这不是batch插入
         for op in ts {
             match op.op {
                 Operation::Set(k, v) => {
