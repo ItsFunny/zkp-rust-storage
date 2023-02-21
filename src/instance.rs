@@ -143,7 +143,11 @@ impl TreeDB for MerkleTreeDB {
     }
 
     fn commit(&mut self, mut operations: Vec<Operation>) -> Result<()> {
-        self.batch_operation(operations)
+        self.batch_operation(operations)?;
+        self.m.flush().map_err(|e| {
+            ErrorEnums::Unknown.into()
+        })
+        // TODO,snapshot
     }
 
     fn root_hash(&self) -> [u8; 32] {
