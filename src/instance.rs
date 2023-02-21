@@ -104,7 +104,6 @@ impl DB for MerkleTreeDB {
     }
 }
 
-/// Collects an iterator of key/value entries into a `Vec`.
 fn to_batch(ops: Vec<Operation>) -> Vec<BatchEntry> {
     let mut batch = Vec::new();
     for val in ops {
