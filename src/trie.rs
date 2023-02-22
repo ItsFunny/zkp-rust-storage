@@ -1,7 +1,9 @@
 use crate::instance::{DB, ProveRequest, ProveResponse, TreeDB, VerifyRequest, VerifyResponse};
 use crate::middleware::Operation;
 
-pub struct TrieDB {}
+pub struct TrieDB {
+
+}
 
 impl DB for TrieDB {
     fn get(&self, k: Vec<u8>) -> crate::instance::Result<Option<Vec<u8>>> {

@@ -1,6 +1,10 @@
 use std::collections::HashMap;
 use std::path::Path;
 pub use failure::Error;
+use hash256_std_hasher::Hash256StdHasher;
+use hash_db::{AsHashDB, HashDB, Hasher, Prefix};
+use memory_db::prefixed_key;
+use tiny_keccak::{Hasher as _, Keccak};
 
 extern crate merk;
 
@@ -73,6 +77,10 @@ pub struct MerkleTreeDB {
     m: Merk,
 }
 
+unsafe impl Send for MerkleTreeDB {}
+
+unsafe impl Sync for MerkleTreeDB {}
+
 impl MerkleTreeDB {
     pub fn new(m: Merk) -> Self {
         Self { m }
@@ -80,6 +88,9 @@ impl MerkleTreeDB {
     pub fn new_with_path<P: AsRef<Path>>(p: P) -> Self {
         let merk = Merk::open(p).expect("fail to create ");
         Self { m: merk }
+    }
+    fn extend_prefix<H: Hasher>(&self, key: &H::Out, prefix: Prefix) -> Vec<u8> {
+        prefixed_key::<H>(key, prefix)
     }
 }
 
@@ -113,6 +124,71 @@ fn to_batch(ops: Vec<Operation>) -> Vec<BatchEntry> {
         }
     }
     batch
+}
+
+pub type KeccakHash = [u8; 32];
+
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct KeccakHasher;
+
+impl Hasher for KeccakHasher {
+    type Out = KeccakHash;
+
+    type StdHasher = Hash256StdHasher;
+
+    const LENGTH: usize = 32;
+
+    fn hash(x: &[u8]) -> Self::Out {
+        let mut keccak = Keccak::v256();
+        keccak.update(x);
+        let mut out = [0u8; 32];
+        keccak.finalize(&mut out);
+        out
+    }
+}
+
+impl AsHashDB<KeccakHasher, Vec<u8>> for MerkleTreeDB {
+    fn as_hash_db(&self) -> &dyn HashDB<KeccakHasher, Vec<u8>> {
+        self
+    }
+
+    fn as_hash_db_mut<'a>(&'a mut self) -> &'a mut (dyn HashDB<KeccakHasher, Vec<u8>> + 'a) {
+        self
+    }
+}
+
+impl HashDB<KeccakHasher, Vec<u8>> for MerkleTreeDB {
+    fn get(&self, key: &<KeccakHasher as Hasher>::Out, prefix: Prefix) -> Option<Vec<u8>> {
+        let ret = <dyn TreeDB>::get(self, self.extend_prefix::<KeccakHasher>(key, prefix));
+        match ret {
+            Err(e) => {
+                None
+            }
+            Ok(v) => {
+                v
+            }
+        }
+    }
+
+    fn contains(&self, key: &<KeccakHasher as Hasher>::Out, prefix: Prefix) -> bool {
+        HashDB::get(self, key, prefix).map_or_else(|| {
+            false
+        }, |v| { true })
+    }
+
+    fn insert(&mut self, prefix: Prefix, value: &[u8]) -> <KeccakHasher as Hasher>::Out {
+        let key = KeccakHasher::hash(value);
+        HashDB::emplace(self, key, prefix, value.into());
+        key
+    }
+
+    fn emplace(&mut self, key: <KeccakHasher as Hasher>::Out, prefix: Prefix, value: Vec<u8>) {
+        let key = self.extend_prefix::<KeccakHasher>(&key, prefix);
+    }
+
+    fn remove(&mut self, key: &<KeccakHasher as Hasher>::Out, prefix: Prefix) {
+        todo!()
+    }
 }
 
 
@@ -175,7 +251,7 @@ pub fn test_merke() {
 
 // apply some operations
     let batch = [
-        (vec![9, 23, 3], Op::Put(vec![1, 2, 3])),
+        (vec![1, 2, 3], Op::Put(vec![1, 2, 3])),
         (vec![4, 5, 6], Op::Delete)
     ];
     let res = merk.apply(&batch, &[]).expect("fail");
