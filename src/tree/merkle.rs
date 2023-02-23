@@ -6,15 +6,15 @@ use crate::tree::couple::{ProveRequest, ProveResponse, VerifyRequest, VerifyResp
 use crate::tree::operation::Operation;
 use crate::tree::tree::{DB, TreeDB};
 
-pub struct MerkleTreeDB {
+pub struct MerkleRocksDB {
     m: Merk,
 }
 
-unsafe impl Send for MerkleTreeDB {}
+unsafe impl Send for MerkleRocksDB {}
 
-unsafe impl Sync for MerkleTreeDB {}
+unsafe impl Sync for MerkleRocksDB {}
 
-impl MerkleTreeDB {
+impl MerkleRocksDB {
     pub fn new(m: Merk) -> Self {
         Self { m }
     }
@@ -24,7 +24,7 @@ impl MerkleTreeDB {
     }
 }
 
-impl DB for MerkleTreeDB {
+impl DB for MerkleRocksDB {
     fn get(&self, k: Vec<u8>) -> ZKResult<Option<Vec<u8>>> {
         self.m.get(k.as_slice()).map_err(|e| {
             ZKError::from(ErrorEnumsStruct::UNKNOWN).with_error(Box::new(e))
@@ -59,7 +59,7 @@ fn to_batch(ops: Vec<Operation>) -> Vec<BatchEntry> {
 }
 
 
-impl TreeDB for MerkleTreeDB {
+impl TreeDB for MerkleRocksDB {
     fn prove(&self, req: ProveRequest) -> ZKResult<ProveResponse> {
         let mut q = Query::default();
         for k in req.query {
@@ -106,7 +106,7 @@ impl TreeDB for MerkleTreeDB {
     }
 }
 
-impl MerkleTreeDB {
+impl MerkleRocksDB {
     fn batch_operation(&mut self, ops: Vec<Operation>) -> ZKResult<()> {
         let batches = to_batch(ops);
         self.m.apply(&batches, &[]).map_err(|e| {

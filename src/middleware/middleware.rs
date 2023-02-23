@@ -121,7 +121,7 @@ mod test {
     use crate::middleware::middleware::{DBMiddleware, TreeMiddleware};
     use crate::tree::tree::DB;
     use crate::tree::couple::{ProveRequest, VerifyRequest};
-    use crate::tree::merkle::MerkleTreeDB;
+    use crate::tree::merkle::MerkleRocksDB;
 
 
     #[test]
@@ -150,8 +150,8 @@ mod test {
 
     fn new_cache_merkle() -> impl TreeMiddleware {
         let mut merk = Merk::open("./merk.db").unwrap();
-        let internal = MerkleTreeDB::new(merk);
-        let db_middleware: DBMiddleware<MerkleTreeDB> = DBMiddleware::new(internal);
+        let internal = MerkleRocksDB::new(merk);
+        let db_middleware: DBMiddleware<MerkleRocksDB> = DBMiddleware::new(internal);
         let mut cache = CacheMiddleware::new(db_middleware);
         return cache;
     }
